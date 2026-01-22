@@ -209,6 +209,13 @@ class LighthouseBinja(LighthouseCore):
             return
         super(LighthouseBinja, self).open_coverage_overview(dctx)
 
+    def _open_coverage_navigator(self, context):
+        dctx = disassembler.binja_get_bv_from_dock()
+        if not dctx:
+            disassembler.warning("Lighthouse requires an open BNDB to open the navigator.")
+            return
+        super(LighthouseBinja, self).open_coverage_navigator(dctx)
+
     def _stub(self, context):
         # XXX: This was added as a last minute bodge prior to releasing v0.9.3,
         # it fixes a crash-on-close that was manifesting on binja macOS, when
@@ -223,6 +230,7 @@ class LighthouseBinja(LighthouseCore):
     ACTION_LOAD_BATCH        = "Lighthouse\\Load code coverage batch..."
     ACTION_COVERAGE_XREF     = "Lighthouse\\Coverage Xref"
     ACTION_COVERAGE_OVERVIEW = "Lighthouse\\Open Coverage Overview"
+    ACTION_COVERAGE_NAVIGATOR= "Lighthouse\\BB Coverage Navigator"
 
     def _install_load_file(self):
         action = self.ACTION_LOAD_FILE
@@ -252,6 +260,13 @@ class LighthouseBinja(LighthouseCore):
         Menu.mainMenu("Plugins").addAction(action, "Windows", 0)
         logger.info("Installed the 'Open Coverage Overview' menu entry")
 
+    def _install_open_coverage_navigator(self):
+        action = self.ACTION_COVERAGE_NAVIGATOR
+        UIAction.registerAction(action)
+        UIActionHandler.globalActions().bindAction(action, UIAction(self._open_coverage_navigator))
+        Menu.mainMenu("Plugins").addAction(action, "Windows", 1)
+        logger.info("Installed the 'BB Coverage Navigator' menu entry")
+
     # NOTE/V35: Binja doesn't really 'unload' plugins, so whatever...
     def _uninstall_load_file(self):
         pass
@@ -260,4 +275,6 @@ class LighthouseBinja(LighthouseCore):
     def _uninstall_open_coverage_xref(self):
         pass
     def _uninstall_open_coverage_overview(self):
+        pass
+    def _uninstall_open_coverage_navigator(self):
         pass

@@ -224,9 +224,9 @@ class IDACoreAPI(DisassemblerCoreAPI):
         os.close(handle)
 
         # attempt to generate an 'html' dump of the first 0x20 bytes (instructions)
+        # NOTE: gen_file will handle the file closing internally
         ida_fd = idaapi.fopenWT(path)
         idaapi.gen_file(idaapi.OFILE_LST, ida_fd, imagebase, imagebase+0x20, idaapi.GENFLG_GENHTML)
-        idaapi.eclose(ida_fd)
 
         # read the dumped text
         with open(path, "r") as fd:
@@ -253,13 +253,13 @@ class IDACoreAPI(DisassemblerCoreAPI):
         # in favor of c41 (line-bg-default) as that's what we really want
         #
 
-        bg_color_text = get_string_between(html, '.c1 \{ background-color: ', ';')
+        bg_color_text = get_string_between(html, r'.c1 \{ background-color: ', ';')
         if bg_color_text:
             logger.debug(" - Extracted background-color '%s' from line-fg-default!" % bg_color_text)
             return QtGui.QColor(bg_color_text)
 
         # -- IDA 7.5 says c41 is /* line-bg-default */, a.k.a the bg color for disassembly text
-        bg_color_text = get_string_between(html, '.c41 \{ background-color: ', ';')
+        bg_color_text = get_string_between(html, r'.c41 \{ background-color: ', ';')
         if bg_color_text:
             logger.debug(" - Extracted background-color '%s' from line-bg-default!" % bg_color_text)
             return QtGui.QColor(bg_color_text)

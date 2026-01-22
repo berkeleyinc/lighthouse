@@ -6,6 +6,7 @@ import idaapi
 from lighthouse.context import LighthouseContext
 from lighthouse.util.misc import plugin_resource
 from lighthouse.integration.core import LighthouseCore
+from lighthouse.util.disassembler import disassembler
 
 logger = logging.getLogger("Lighthouse.IDA.Integration")
 
@@ -25,6 +26,7 @@ class LighthouseIDA(LighthouseCore):
         self._icon_id_file = idaapi.BADADDR
         self._icon_id_batch = idaapi.BADADDR
         self._icon_id_overview = idaapi.BADADDR
+        self._icon_id_navigator = idaapi.BADADDR
 
         # IDA ui hooks
         self._ui_hooks = UIHooks(self)
@@ -68,6 +70,7 @@ class LighthouseIDA(LighthouseCore):
     ACTION_LOAD_BATCH        = "lighthouse:load_batch"
     ACTION_COVERAGE_XREF     = "lighthouse:coverage_xref"
     ACTION_COVERAGE_OVERVIEW = "lighthouse:coverage_overview"
+    ACTION_COVERAGE_NAVIGATOR= "lighthouse:coverage_navigator"
 
     def _install_load_file(self):
         """
@@ -205,6 +208,42 @@ class LighthouseIDA(LighthouseCore):
 
         logger.info("Installed the 'Coverage Overview' menu entry")
 
+    def _install_open_coverage_navigator(self):
+        """
+        Install the 'View->Open subviews->BB Coverage Navigator' menu entry.
+        """
+
+        # create a custom IDA icon (reuse overview icon)
+        # NOTE: In newer IDA versions, load_custom_icon expects a file path, not data
+        icon_path = plugin_resource(os.path.join("icons", "overview.png"))
+        self._icon_id_navigator = idaapi.load_custom_icon(icon_path)
+
+        # describe a custom IDA UI action
+        action_desc = idaapi.action_desc_t(
+            self.ACTION_COVERAGE_NAVIGATOR,            # The action name
+            "BB Cove~r~age Navigator",                 # The action text
+            IDACtxEntry(self.open_coverage_navigator), # The action handler
+            None,                                      # Optional: action shortcut
+            "Open BB coverage order navigator",       # Optional: tooltip
+            self._icon_id_navigator                    # Optional: the action icon
+        )
+
+        # register the action with IDA
+        result = idaapi.register_action(action_desc)
+        if not result:
+            RuntimeError("Failed to register BB coverage navigator action with IDA")
+
+        # attach the action to the View-> dropdown menu
+        result = idaapi.attach_action_to_menu(
+            "View/Open subviews/Hex dump", # Relative path of where to add the action
+            self.ACTION_COVERAGE_NAVIGATOR, # The action ID (see above)
+            idaapi.SETMENU_INS               # We want to insert the action before ^
+        )
+        if not result:
+            RuntimeError("Failed action attach to 'View/Open subviews' dropdown")
+
+        logger.info("Installed the 'BB Coverage Navigator' menu entry")
+
     def _uninstall_load_file(self):
         """
         Remove the 'File->Load file->Code coverage file...' menu entry.
@@ -294,6 +333,30 @@ class LighthouseIDA(LighthouseCore):
 
         logger.info("Uninstalled the 'Coverage Overview' menu entry")
 
+    def _uninstall_open_coverage_navigator(self):
+        """
+        Remove the 'View->Open subviews->BB Coverage Navigator' menu entry.
+        """
+
+        # remove the entry from the View-> menu
+        result = idaapi.detach_action_from_menu(
+            "View/Open subviews/Hex dump",
+            self.ACTION_COVERAGE_NAVIGATOR
+        )
+        if not result:
+            return False
+
+        # unregister the action
+        result = idaapi.unregister_action(self.ACTION_COVERAGE_NAVIGATOR)
+        if not result:
+            return False
+
+        # delete the entry's icon
+        idaapi.free_custom_icon(self._icon_id_navigator)
+        self._icon_id_navigator = idaapi.BADADDR
+
+        logger.info("Uninstalled the 'BB Coverage Navigator' menu entry")
+
     #--------------------------------------------------------------------------
     # Helpers
     #--------------------------------------------------------------------------
@@ -322,6 +385,12 @@ class LighthouseIDA(LighthouseCore):
         Grab a contextual address before opening the coverage xref dialog.
         """
         self.open_coverage_xref(idaapi.get_screen_ea())
+
+    def open_coverage_navigator(self, dctx=None):
+        """
+        Open the BB Coverage Navigator view.
+        """
+        disassembler.show_dockable("BB Coverage Navigator")
 
 #------------------------------------------------------------------------------
 # IDA UI Helpers

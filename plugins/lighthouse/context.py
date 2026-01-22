@@ -38,6 +38,9 @@ class LighthouseContext(object):
         # the coverage overview widget
         self.coverage_overview = None
 
+        # the BB coverage navigator widget
+        self.coverage_navigator = None
+
         # the directory to start the coverage file dialog in
         self._last_directory = None
 

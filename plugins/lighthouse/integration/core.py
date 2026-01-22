@@ -50,8 +50,17 @@ class LighthouseCore(object):
             overview = CoverageOverview(lctx, widget)
             return widget
 
+        def create_coverage_navigator(name, parent, dctx):
+            lctx = self.get_context(dctx, startup=False)
+            widget = disassembler.create_dockable_widget(parent, name)
+            from lighthouse.ui.coverage_navigator import CoverageNavigator
+            navigator = CoverageNavigator(lctx, widget)
+            return widget
+
         # the coverage overview widget
         disassembler.register_dockable("Coverage Overview", create_coverage_overview)
+        # the coverage navigator widget
+        disassembler.register_dockable("BB Coverage Navigator", create_coverage_navigator)
 
         # install disassembler UI
         self._install_ui()
@@ -114,11 +123,13 @@ class LighthouseCore(object):
         self._install_load_batch()
         self._install_open_coverage_xref()
         self._install_open_coverage_overview()
+        self._install_open_coverage_navigator()
 
     def _uninstall_ui(self):
         """
         Cleanup & remove all plugin UI integrations.
         """
+        self._uninstall_open_coverage_navigator()
         self._uninstall_open_coverage_overview()
         self._uninstall_open_coverage_xref()
         self._uninstall_load_batch()
@@ -153,6 +164,13 @@ class LighthouseCore(object):
         pass
 
     @abc.abstractmethod
+    def _install_open_coverage_navigator(self):
+        """
+        Install the 'View->Open subviews->BB Coverage Navigator' menu entry.
+        """
+        pass
+
+    @abc.abstractmethod
     def _uninstall_load_file(self):
         """
         Remove the 'File->Load file->Code coverage file...' menu entry.
@@ -179,6 +197,22 @@ class LighthouseCore(object):
         Remove the 'View->Open subviews->Coverage Overview' menu entry.
         """
         pass
+
+    @abc.abstractmethod
+    def _uninstall_open_coverage_navigator(self):
+        """
+        Remove the 'View->Open subviews->BB Coverage Navigator' menu entry.
+        """
+        pass
+
+    def open_coverage_navigator(self, dctx=None):
+        """
+        Open the dockable 'BB Coverage Navigator' dialog.
+        """
+        lctx = self.get_context(dctx)
+
+        # show the coverage navigator
+        disassembler.show_dockable("BB Coverage Navigator")
 
     #--------------------------------------------------------------------------
     # UI Actions (Public)

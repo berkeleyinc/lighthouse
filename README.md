@@ -12,6 +12,25 @@ This project placed 2nd in IDA's [2017 Plug-In Contest](https://hex-rays.com/con
 
 Special thanks to [@0vercl0k](https://twitter.com/0vercl0k) for the inspiration.
 
+## Fork Changes
+
+This fork adds the following new features:
+
+### BB Coverage Navigator
+
+A new dockable widget that allows you to view and navigate the execution order of basic blocks within your binary. This feature provides:
+
+- **Execution Order Visualization**: View the sequence of basic block execution to understand program flow patterns
+- **Interactive Navigation**: Navigate through basic blocks in the order they were executed during coverage collection
+- **Integration**: Seamlessly integrates with existing Lighthouse coverage data
+- **Automatic Opening**: The navigator automatically opens when coverage data is loaded
+
+To access:
+- **IDA Pro**: `View > Open subviews > BB Coverage Navigator`
+- **Binary Ninja**: `Plugins > BB Coverage Navigator`
+
+This enhancement complements the existing Coverage Overview and Coverage Xref views by providing finer granularity in understanding execution coverage patterns across your target binaries.
+
 ## Releases
 
 * v0.9 -- Python 3 support, custom coverage formats, coverage cross-refs, theming subsystem, much more.

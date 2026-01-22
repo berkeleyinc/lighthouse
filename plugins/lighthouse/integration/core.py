@@ -243,6 +243,19 @@ class LighthouseCore(object):
         # trigger an update check (this should only ever really 'check' once)
         self.check_for_update()
 
+    def open_coverage_navigator(self, dctx=None):
+        """
+        Open the dockable 'BB Coverage Navigator' dialog.
+        """
+        lctx = self.get_context(dctx)
+
+        # the coverage navigator is already open & visible, nothing to do
+        if hasattr(lctx, 'coverage_navigator') and lctx.coverage_navigator and lctx.coverage_navigator.visible:
+            return
+
+        # show the coverage navigator
+        disassembler.show_dockable("BB Coverage Navigator")
+
     def open_coverage_xref(self, address, dctx=None):
         """
         Open the 'Coverage Xref' dialog for a given address.
@@ -356,6 +369,7 @@ class LighthouseCore(object):
         disassembler.hide_wait_box()
         lmsg("Successfully loaded batch %s..." % batch_name)
         self.open_coverage_overview(lctx.dctx)
+        self.open_coverage_navigator(lctx.dctx)
 
         # finally, emit any notable issues that occurred during load
         warn_errors(errors, lctx.director.suppressed_errors)
@@ -426,6 +440,7 @@ class LighthouseCore(object):
         disassembler.hide_wait_box()
         lmsg("Successfully loaded %u coverage file(s)..." % len(created_coverage))
         self.open_coverage_overview(lctx.dctx)
+        self.open_coverage_navigator(lctx.dctx)
 
         # finally, emit any notable issues that occurred during load
         warn_errors(errors, lctx.director.suppressed_errors)

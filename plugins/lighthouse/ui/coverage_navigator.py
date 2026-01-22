@@ -1,4 +1,5 @@
 import logging
+import logging
 import weakref
 from lighthouse.util.qt import *
 from lighthouse.util.disassembler import disassembler
@@ -15,10 +16,12 @@ logger = logging.getLogger("Lighthouse.UI.Navigator")
 def log_debug(msg):
     """Log debug message."""
     logger.debug(msg)
+    print("[Debug] %s" % msg)
 
 def log_info(msg):
     """Log info message."""
     logger.info(msg)
+    print("[Info] %s" % msg)
 
 def log_print(msg):
     """Print message directly to console for debugging."""
@@ -118,6 +121,7 @@ class CoverageTableView(QtWidgets.QTableView):
         self.customContextMenuRequested.connect(self._ui_table_ctx_menu_handler)
 
     def _ui_entry_double_click(self, index):
+        log_print("_ui_entry_double_click: index.row()=%d, index.column()=%d" % (index.row(), index.column()))
         self._controller.navigate_to_bb(index.row())
 
     def _ui_table_ctx_menu_handler(self, position):
@@ -146,16 +150,33 @@ class CoverageTableController(object):
         log_debug("CoverageTableController initialized")
 
     def navigate_to_bb(self, row):
+        """
+        Navigate to the basic block depicted by the given row.
+        """
+        log_print("navigate_to_bb called with row=%d" % row)
+        log_print("  _model.row2bb keys: %s" % list(self._model.row2bb.keys())[:10])
+        
         bb_address = self._model.row2bb.get(row, BADADDR)
-        offset = self._model.row2offset.get(row, 0)
-
+        log_print("  bb_address=0x%X" % bb_address)
+        
         if bb_address == BADADDR:
-            log_debug("navigate_to_bb: Invalid address for row %d" % row)
+            log_print("  Invalid address for row %d" % row)
             return
 
-        log_info("Navigating to BB at 0x%X (offset: 0x%X, row #%d)" % (bb_address, offset, row))
+        # get the function containing this basic block
+        log_print("  lctx=%s, lctx.director=%s" % (self.lctx, self.lctx.director))
+        funcs = self.lctx.director.metadata.get_functions_containing(bb_address)
+        log_print("  funcs=%s" % funcs)
+        if funcs:
+            function_address = funcs[0].address
+        else:
+            function_address = bb_address
 
-        disassembler[self.lctx].navigate(bb_address)
+        log_print("  Navigating to BB at 0x%X (func: 0x%X, row #%d)" % (bb_address, function_address, row))
+
+        # navigate to the function + basic block
+        disassembler[self.lctx].navigate_to_function(function_address, bb_address)
+        log_print("  navigate_to_function completed")
 
 class CoverageTableModel(QtCore.QAbstractTableModel):
     BB_INDEX = 0
@@ -222,13 +243,12 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
         return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
 
     def rowCount(self, index=QtCore.QModelIndex()):
-        log_print("rowCount called, returning %d" % self._row_count)
         return self._row_count
 
     def columnCount(self, index=QtCore.QModelIndex()):
         return len(self.COLUMN_HEADERS)
 
-    def headerData(self, column, orientation, role=QtCore.Qt.DisplayRole):
+    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
         """
         Define the properties of the table rows & columns.
         """
@@ -236,24 +256,24 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
 
             # the title of the header columns has been requested
             if role == QtCore.Qt.DisplayRole:
-                return self.COLUMN_HEADERS[column]
+                return self.COLUMN_HEADERS.get(section, None)
 
             # the text alignment of the header has been requested
             elif role == QtCore.Qt.TextAlignmentRole:
-                return self._column_alignment[column]
+                return self._column_alignment[section]
 
             # tooltip request
             elif role == QtCore.Qt.ToolTipRole:
-                return self.COLUMN_TOOLTIPS[column]
+                return self.COLUMN_TOOLTIPS.get(section, None)
 
             # font format request
             elif role == QtCore.Qt.FontRole:
                 return self._title_font
 
-        # size hint request
-        if role == QtCore.Qt.SizeHintRole:
+        # size hint request (only for horizontal headers)
+        if role == QtCore.Qt.SizeHintRole and orientation == QtCore.Qt.Horizontal:
             title_fm = QtGui.QFontMetricsF(self._title_font)
-            title_rect = title_fm.boundingRect(self.COLUMN_HEADERS[column])
+            title_rect = title_fm.boundingRect(self.COLUMN_HEADERS.get(section, ""))
             padded = QtCore.QSize(int(title_rect.width()*1.45), int(title_rect.height()*1.75))
             return padded
 
@@ -263,7 +283,6 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
     def data(self, index, role=QtCore.Qt.DisplayRole):
         # Handle case where index is not a QModelIndex (e.g., integer passed for font query)
         if not hasattr(index, 'row'):
-            log_print("data() called with non-index: %s, role=%d" % (type(index), role))
             if role == QtCore.Qt.FontRole:
                 return self._entry_font
             return None
@@ -271,10 +290,6 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
         row = index.row()
         column = index.column()
         
-        # Log all data() calls for debugging
-        if row < 3:
-            log_print("data() called: row=%d, col=%d, role=%d" % (row, column, role))
-
         if role == QtCore.Qt.DisplayRole:
             bb_address = self.row2bb.get(row, BADADDR)
             offset = self.row2offset.get(row, 0)
@@ -331,10 +346,11 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
     @disassembler.execute_ui
     def _internal_refresh(self):
         log_print("_internal_refresh: Starting...")
+        log_print("_internal_refresh: self=%s, row_count before=%d" % (self, self._row_count))
         self._refresh_data()
-        log_print("_internal_refresh: Emitting layoutChanged...")
+        log_print("_internal_refresh: emitting layoutChanged...")
         self.layoutChanged.emit()
-        log_print("_internal_refresh: Complete, row_count=%d" % self._row_count)
+        log_print("_internal_refresh: Complete, row_count=%d, row2bb len=%d" % (self._row_count, len(self.row2bb)))
 
     def _refresh_data(self):
         log_print("_refresh_data: Starting refresh...")
@@ -381,6 +397,9 @@ class CoverageNavigator(object):
         log_print("CoverageNavigator: Initializing...")
         self.lctx = lctx
         self.widget = widget
+
+        # Store reference in context for visibility checks
+        self.lctx.coverage_navigator = self
 
         # Event filter for widget lifecycle
         self._events = NavigatorEventProxy(self)
@@ -525,11 +544,25 @@ class CoverageNavigator(object):
     def _ui_layout(self):
         if not self.widget or not self._table_view:
             return
+        
+        # Check if widget already has a layout
+        existing_layout = self.widget.layout()
+        if existing_layout:
+            log_print("_ui_layout: WARNING - widget already has layout: %s" % existing_layout)
+            # Clear the existing layout
+            while existing_layout.count():
+                item = existing_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            QtWidgets.QWidget().setLayout(existing_layout)  # Orphan old layout
+        
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(int(get_dpi_scale()*5))
         layout.addWidget(self._toolbar)
         layout.addWidget(self._table_view, stretch=1)  # Give table stretch priority
         self.widget.setLayout(layout)
+        log_print("_ui_layout: layout set, table_view.parent()=%s, widget=%s" % (
+            self._table_view.parent(), self.widget))
         log_print("_ui_layout: table_view size=%s, viewport size=%s" % (
             self._table_view.size(), 
             self._table_view.viewport().size() if self._table_view.viewport() else "None"
@@ -549,13 +582,19 @@ class CoverageNavigator(object):
                 view_model.rowCount() if view_model else -1,
                 view_model.columnCount() if view_model else -1))
             
+            # Debug: check parent hierarchy
+            log_print("CoverageNavigator.refresh(): table_view.parent()=%s, widget=%s" % (
+                self._table_view.parent(), self.widget))
+            log_print("CoverageNavigator.refresh(): table_view.isVisible()=%s, widget.isVisible()=%s" % (
+                self._table_view.isVisible(), self.widget.isVisible() if self.widget else "N/A"))
+            
             # Debug: manually test data() with a proper index
             if view_model and view_model.rowCount() > 0:
-                test_index = view_model.index(0, 0)
+                test_index = view_model.index(1, 1)
                 log_print("CoverageNavigator.refresh(): test_index valid=%s, row=%d, col=%d" % (
                     test_index.isValid(), test_index.row(), test_index.column()))
                 test_data = view_model.data(test_index, QtCore.Qt.DisplayRole)
-                log_print("CoverageNavigator.refresh(): data(0,0)='%s'" % test_data)
+                log_print("CoverageNavigator.refresh(): data(1,1)='%s'" % test_data)
             
             # Force the view to reset and re-query the model
             self._table_view.reset()

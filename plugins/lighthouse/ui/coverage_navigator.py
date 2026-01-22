@@ -374,7 +374,7 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
 
         log_print("_refresh_data: imagebase=0x%X, coverage nodes=%d" % (imagebase, len(coverage.nodes)))
 
-        self._bb_coverage = sorted(coverage.nodes.keys())
+        self._bb_coverage = list(coverage.nodes_in_order)
         for bb_address in self._bb_coverage:
             self.row2bb[row] = bb_address
             self.row2offset[row] = bb_address - imagebase

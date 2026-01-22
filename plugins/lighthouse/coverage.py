@@ -100,6 +100,14 @@ class DatabaseCoverage(object):
         self._imagebase = BADADDR
 
         #
+        # preserve the original order of addresses as they appeared in the
+        # coverage file. this is important for trace-based coverage where
+        # the execution order matters.
+        #
+
+        self._ordered_addresses = list(dict.fromkeys(data)) if data else []
+
+        #
         # the coverage hash is a simple hash of the coverage mask (hitmap keys)
         #
         # it is primarily used by the director as a means of quickly comparing
@@ -157,10 +165,12 @@ class DatabaseCoverage(object):
         # children NodeCoverage objects and providing higher level statistics.
         #
         # self.nodes: address --> NodeCoverage
+        # self.nodes_in_order: list of addresses in execution order
         # self.functions: address --> FunctionCoverage
         #
 
         self.nodes = {}
+        self.nodes_in_order = []
         self.functions = {}
         self.instruction_percent = 0.0
 
@@ -538,7 +548,8 @@ class DatabaseCoverage(object):
         dirty_nodes = {}
 
         # the coverage data we will attempt to process in this function
-        coverage_addresses = sorted(self.unmapped_addresses)
+        # use ordered addresses to preserve execution order from the coverage file
+        coverage_addresses = [addr for addr in self._ordered_addresses if addr in self.unmapped_addresses]
 
         #
         # the loop below is the core of our coverage mapping process.
@@ -598,6 +609,7 @@ class DatabaseCoverage(object):
             else:
                 node_coverage = NodeCoverage(node_metadata.address, self._weak_self)
                 self.nodes[node_metadata.address] = node_coverage
+                self.nodes_in_order.append(node_metadata.address)
 
             # alias for speed, prior to looping
             node_start = node_metadata.address
@@ -705,6 +717,7 @@ class DatabaseCoverage(object):
 
         # clear out the processed / computed coverage data structures
         self.nodes = {}
+        self.nodes_in_order = []
         self.functions = {}
         self.partial_nodes = set()
         self.partial_instructions = set()

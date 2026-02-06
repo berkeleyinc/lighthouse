@@ -470,6 +470,24 @@ class CoverageNavigator(object):
         self._next_button.setToolTip("Next basic block (Ctrl+Right)")
         self._next_button.clicked.connect(self._navigate_next)
 
+        # Prev in function button
+        self._prev_in_function_button = QtWidgets.QToolButton()
+        self._prev_in_function_button.setText("<<")
+        self._prev_in_function_button.setToolTip("Previous basic block in current function (Ctrl+Shift+Left)")
+        self._prev_in_function_button.clicked.connect(self._navigate_prev_in_function)
+
+        # Next in function button
+        self._next_in_function_button = QtWidgets.QToolButton()
+        self._next_in_function_button.setText(">>")
+        self._next_in_function_button.setToolTip("Next basic block in current function (Ctrl+Shift+Right)")
+        self._next_in_function_button.clicked.connect(self._navigate_next_in_function)
+
+        # Sync button
+        self._sync_button = QtWidgets.QToolButton()
+        self._sync_button.setIcon(get_qt_icon("SP_BrowserReload"))
+        self._sync_button.setToolTip("Sync with current IDA location (S)")
+        self._sync_button.clicked.connect(self._sync_with_ida)
+
         # Refresh button
         self._refresh_button = QtWidgets.QToolButton()
         self._refresh_button.setIcon(get_qt_icon("SP_BrowserReload"))
@@ -487,6 +505,9 @@ class CoverageNavigator(object):
         # Add widgets to toolbar
         self._toolbar.addWidget(self._prev_button)
         self._toolbar.addWidget(self._next_button)
+        self._toolbar.addWidget(self._prev_in_function_button)
+        self._toolbar.addWidget(self._next_in_function_button)
+        self._toolbar.addWidget(self._sync_button)
         self._toolbar.addSeparator()
         self._toolbar.addWidget(self._refresh_button)
         self._toolbar.addWidget(spacer)
@@ -500,6 +521,15 @@ class CoverageNavigator(object):
 
         self._hotkey_next = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Right"), self._table_view)
         self._hotkey_next.activated.connect(self._navigate_next)
+
+        self._hotkey_next_in_function = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Right"), self._table_view)
+        self._hotkey_next_in_function.activated.connect(self._navigate_next_in_function)
+
+        self._hotkey_prev_in_function = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Left"), self._table_view)
+        self._hotkey_prev_in_function.activated.connect(self._navigate_prev_in_function)
+
+        self._hotkey_sync = QtWidgets.QShortcut(QtGui.QKeySequence("S"), self._table_view)
+        self._hotkey_sync.activated.connect(self._sync_with_ida)
 
     def _navigate_prev(self):
         """Navigate to previous BB row."""
@@ -525,12 +555,134 @@ class CoverageNavigator(object):
         self._table_view.selectRow(row)
         self._table_controller.navigate_to_bb(row)
 
+    def _navigate_prev_in_function(self):
+        """Navigate to previous BB in the current function."""
+        if not self._table_view or not self._table_model or not self._table_controller:
+            return
+
+        current = self._table_view.currentIndex()
+        if not current.isValid():
+            return
+
+        current_row = current.row()
+        current_bb_address = self._table_model.row2bb.get(current_row, None)
+        if current_bb_address is None:
+            return
+
+        director = self._table_model._director
+        if not director:
+            return
+
+        funcs = director.metadata.get_functions_containing(current_bb_address)
+        if not funcs:
+            return
+
+        target_function = funcs[0]
+
+        for row in range(current_row - 1, -1, -1):
+            bb_address = self._table_model.row2bb.get(row, None)
+            if bb_address is None:
+                continue
+
+            bb_funcs = director.metadata.get_functions_containing(bb_address)
+            if bb_funcs and bb_funcs[0] == target_function:
+                log_debug("_navigate_prev_in_function: Moving to row %d" % row)
+                self._table_view.selectRow(row)
+                self._table_controller.navigate_to_bb(row)
+                return
+
+    def _navigate_next_in_function(self):
+        """Navigate to next BB in the current function."""
+        if not self._table_view or not self._table_model or not self._table_controller:
+            return
+
+        current = self._table_view.currentIndex()
+        if not current.isValid():
+            return
+
+        current_row = current.row()
+        current_bb_address = self._table_model.row2bb.get(current_row, None)
+        if current_bb_address is None:
+            return
+
+        director = self._table_model._director
+        if not director:
+            return
+
+        funcs = director.metadata.get_functions_containing(current_bb_address)
+        if not funcs:
+            return
+
+        target_function = funcs[0]
+
+        for row in range(current_row + 1, self._table_model.rowCount()):
+            bb_address = self._table_model.row2bb.get(row, None)
+            if bb_address is None:
+                continue
+
+            bb_funcs = director.metadata.get_functions_containing(bb_address)
+            if bb_funcs and bb_funcs[0] == target_function:
+                log_debug("_navigate_next_in_function: Moving to row %d" % row)
+                self._table_view.selectRow(row)
+                self._table_controller.navigate_to_bb(row)
+                return
+
     def _on_refresh_clicked(self):
         """Handle refresh button click."""
         log_print("Refresh button clicked")
         self.refresh()
         if self._table_model:
             log_print("Refresh complete, row_count=%d" % self._table_model.rowCount())
+
+    def _sync_with_ida(self):
+        """Sync navigator with current IDA screen location."""
+        if not self._table_view or not self._table_model or not self._table_controller:
+            return
+
+        try:
+            current_address = disassembler[self.lctx].get_current_address()
+        except:
+            log_debug("_sync_with_ida: Failed to get current address")
+            return
+
+        if current_address == 0 or current_address == BADADDR:
+            log_debug("_sync_with_ida: No valid current address")
+            return
+
+        director = self._table_model._director
+        if not director:
+            return
+
+        # Find the function containing the current address
+        funcs = director.metadata.get_functions_containing(current_address)
+        if not funcs:
+            log_debug("_sync_with_ida: No function contains current address 0x%X" % current_address)
+            return
+
+        target_function = funcs[0]
+        best_row = -1
+        min_distance = float('inf')
+
+        # Find the BB in the model that's closest to our current address within the same function
+        for row in range(self._table_model.rowCount()):
+            bb_address = self._table_model.row2bb.get(row, None)
+            if bb_address is None:
+                continue
+
+            bb_funcs = director.metadata.get_functions_containing(bb_address)
+            if bb_funcs and bb_funcs[0] == target_function:
+                # Check if this BB contains the current address or is nearby
+                distance = abs(current_address - bb_address)
+                if distance < min_distance:
+                    min_distance = distance
+                    best_row = row
+
+        if best_row >= 0:
+            log_debug("_sync_with_ida: Found BB at row %d (distance %d)" % (best_row, min_distance))
+            self._table_view.selectRow(best_row)
+            self._table_view.scrollTo(self._table_model.index(best_row, 0))
+        else:
+            log_debug("_sync_with_ida: No matching BB found for function %s" % target_function.name)
 
     def _update_status_label(self):
         """Update the status label with current BB count."""

@@ -392,6 +392,92 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
         self.dataChanged.emit(QtCore.QModelIndex(), QtCore.QModelIndex())
         self.headerDataChanged.emit(QtCore.Qt.Horizontal, column, column)
 
+#------------------------------------------------------------------------------
+# Fuzz Target Dialog
+#------------------------------------------------------------------------------
+
+class FuzzTargetDialog(QtWidgets.QDialog):
+    """
+    A dialog that shows all covered functions ranked by their trace span.
+    Double-clicking a row navigates to that function's first BB in the trace.
+    """
+
+    def __init__(self, ranked, total_rows, table_view, table_model, table_controller, parent=None):
+        super(FuzzTargetDialog, self).__init__(parent)
+        self._ranked = ranked
+        self._total_rows = total_rows
+        self._table_view = table_view
+        self._table_model = table_model
+        self._table_controller = table_controller
+        self._ui_init()
+
+    def _ui_init(self):
+        self.setWindowTitle("Fuzz Targets (ranked by trace span)")
+        self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowContextHelpButtonHint)
+        self.setMinimumSize(650, 400)
+
+        self._font = MonospaceFont()
+        self._font.setPointSizeF(normalize_to_dpi(10))
+
+        # table
+        self._table = QtWidgets.QTableWidget()
+        self._table.setColumnCount(4)
+        self._table.setHorizontalHeaderLabels(["#", "Function", "Span (BBs)", "Span %"])
+        self._table.verticalHeader().setVisible(False)
+        self._table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self._table.horizontalHeader().setFont(self._font)
+        self._table.setFont(self._font)
+        self._table.setWordWrap(False)
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.horizontalHeader().setHighlightSections(False)
+        self._table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self._table.setColumnWidth(0, 50)
+        self._table.setColumnWidth(2, 100)
+        self._table.setColumnWidth(3, 90)
+
+        self._populate_table()
+
+        self._table.cellDoubleClicked.connect(self._on_double_click)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self._table)
+        self.setLayout(layout)
+
+    def _populate_table(self):
+        self._table.setRowCount(len(self._ranked))
+        for i, (func_name, func_address, span, span_percent, first_row) in enumerate(self._ranked):
+            item_rank = QtWidgets.QTableWidgetItem("%d" % (i + 1))
+            item_rank.setTextAlignment(QtCore.Qt.AlignCenter)
+
+            item_name = QtWidgets.QTableWidgetItem(func_name)
+
+            item_span = QtWidgets.QTableWidgetItem("%d" % span)
+            item_span.setTextAlignment(QtCore.Qt.AlignCenter)
+
+            item_pct = QtWidgets.QTableWidgetItem("%.2f%%" % span_percent)
+            item_pct.setTextAlignment(QtCore.Qt.AlignCenter)
+
+            self._table.setItem(i, 0, item_rank)
+            self._table.setItem(i, 1, item_name)
+            self._table.setItem(i, 2, item_span)
+            self._table.setItem(i, 3, item_pct)
+
+    def _on_double_click(self, row, column):
+        if row < 0 or row >= len(self._ranked):
+            return
+
+        func_name, func_address, span, span_percent, first_row = self._ranked[row]
+        log_print("Fuzz target selected: %s (span %d, %.2f%%)" % (func_name, span, span_percent))
+
+        self._table_view.selectRow(first_row)
+        self._table_view.scrollTo(self._table_model.index(first_row, 0))
+        self._table_controller.navigate_to_bb(first_row)
+
+#------------------------------------------------------------------------------
+# BB Coverage Navigator Widget
+#------------------------------------------------------------------------------
+
 class CoverageNavigator(object):
     def __init__(self, lctx, widget):
         log_print("CoverageNavigator: Initializing...")
@@ -488,6 +574,12 @@ class CoverageNavigator(object):
         self._sync_button.setToolTip("Sync with current IDA location (S)")
         self._sync_button.clicked.connect(self._sync_with_ida)
 
+        # Best fuzzing target button
+        self._fuzz_target_button = QtWidgets.QToolButton()
+        self._fuzz_target_button.setText("Fuzz")
+        self._fuzz_target_button.setToolTip("Jump to best fuzzing target function (F)")
+        self._fuzz_target_button.clicked.connect(self._navigate_best_fuzz_target)
+
         # Refresh button
         self._refresh_button = QtWidgets.QToolButton()
         self._refresh_button.setIcon(get_qt_icon("SP_BrowserReload"))
@@ -508,6 +600,7 @@ class CoverageNavigator(object):
         self._toolbar.addWidget(self._prev_in_function_button)
         self._toolbar.addWidget(self._next_in_function_button)
         self._toolbar.addWidget(self._sync_button)
+        self._toolbar.addWidget(self._fuzz_target_button)
         self._toolbar.addSeparator()
         self._toolbar.addWidget(self._refresh_button)
         self._toolbar.addWidget(spacer)
@@ -530,6 +623,9 @@ class CoverageNavigator(object):
 
         self._hotkey_sync = QtWidgets.QShortcut(QtGui.QKeySequence("S"), self._table_view)
         self._hotkey_sync.activated.connect(self._sync_with_ida)
+
+        self._hotkey_fuzz_target = QtWidgets.QShortcut(QtGui.QKeySequence("F"), self._table_view)
+        self._hotkey_fuzz_target.activated.connect(self._navigate_best_fuzz_target)
 
     def _navigate_prev(self):
         """Navigate to previous BB row."""
@@ -683,6 +779,68 @@ class CoverageNavigator(object):
             self._table_view.scrollTo(self._table_model.index(best_row, 0))
         else:
             log_debug("_sync_with_ida: No matching BB found for function %s" % target_function.name)
+
+    def _navigate_best_fuzz_target(self):
+        """
+        Open a dialog ranking all covered functions by their trace span.
+
+        The trace span of a function is measured from its first BB to its
+        last BB in execution order. The function whose span covers the
+        largest percentage of the whole trace is the best fuzzing target.
+        """
+        if not self._table_view or not self._table_model or not self._table_controller:
+            return
+
+        director = self._table_model._director
+        if not director or not director.coverage:
+            return
+
+        metadata = director.metadata
+        total_rows = self._table_model.rowCount()
+        if total_rows == 0:
+            return
+
+        # For each function, find the first and last row in the trace
+        # func_address -> (first_row, last_row)
+        func_spans = {}
+
+        for row in range(total_rows):
+            bb_address = self._table_model.row2bb.get(row, None)
+            if bb_address is None:
+                continue
+
+            bb_funcs = metadata.get_functions_containing(bb_address)
+            if not bb_funcs:
+                continue
+
+            func_address = bb_funcs[0].address
+            if func_address not in func_spans:
+                func_spans[func_address] = (row, row)
+            else:
+                first_row = func_spans[func_address][0]
+                func_spans[func_address] = (first_row, row)
+
+        if not func_spans:
+            log_debug("_navigate_best_fuzz_target: No function spans found")
+            return
+
+        # Build ranked list sorted by span descending
+        ranked = []
+        for func_address, (first_row, last_row) in func_spans.items():
+            span = last_row - first_row + 1
+            func_meta = metadata.functions.get(func_address, None)
+            func_name = func_meta.name if func_meta else ("0x%X" % func_address)
+            span_percent = float(span) / total_rows * 100.0
+            ranked.append((func_name, func_address, span, span_percent, first_row))
+
+        ranked.sort(key=lambda x: x[2], reverse=True)
+
+        # Open the dialog
+        dialog = FuzzTargetDialog(
+            ranked, total_rows, self._table_view, self._table_model,
+            self._table_controller, self.widget
+        )
+        dialog.exec_()
 
     def _update_status_label(self):
         """Update the status label with current BB count."""

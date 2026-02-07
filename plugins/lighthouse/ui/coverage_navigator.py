@@ -570,13 +570,13 @@ class CoverageNavigator(object):
 
         # Sync button
         self._sync_button = QtWidgets.QToolButton()
-        self._sync_button.setIcon(get_qt_icon("SP_BrowserReload"))
+        self._sync_button.setIcon(get_qt_icon("SP_DialogOkButton"))
         self._sync_button.setToolTip("Sync with current IDA location (S)")
         self._sync_button.clicked.connect(self._sync_with_ida)
 
         # Best fuzzing target button
         self._fuzz_target_button = QtWidgets.QToolButton()
-        self._fuzz_target_button.setText("Fuzz")
+        self._fuzz_target_button.setIcon(get_qt_icon("SP_ArrowDown"))
         self._fuzz_target_button.setToolTip("Jump to best fuzzing target function (F)")
         self._fuzz_target_button.clicked.connect(self._navigate_best_fuzz_target)
 
@@ -800,9 +800,26 @@ class CoverageNavigator(object):
         if total_rows == 0:
             return
 
-        # For each function, find the first and last row in the trace
-        # func_address -> (first_row, last_row)
-        func_spans = {}
+        # Pre-compute the set of exit node addresses for each function.
+        # An exit node is one whose outgoing edge address has no entries
+        # in the function's edge dict (i.e. it returns or leaves the function).
+        func_exit_nodes = {}
+        for func_address, func_meta in iteritems(metadata.functions):
+            exits = set()
+            for node_address, node_meta in iteritems(func_meta.nodes):
+                if not func_meta.edges.get(node_meta.edge_out, []):
+                    exits.add(node_address)
+            func_exit_nodes[func_address] = exits
+
+        # Walk the trace looking for function entry -> exit spans.
+        # When we see a BB that is a function entry point, we start
+        # tracking. The span ends at the first exit BB of that function.
+        # We record the best (largest) span per function.
+        # func_address -> (span, first_row)
+        best_spans = {}
+
+        # Track open (in-progress) spans: func_address -> start_row
+        open_spans = {}
 
         for row in range(total_rows):
             bb_address = self._table_model.row2bb.get(row, None)
@@ -814,20 +831,28 @@ class CoverageNavigator(object):
                 continue
 
             func_address = bb_funcs[0].address
-            if func_address not in func_spans:
-                func_spans[func_address] = (row, row)
-            else:
-                first_row = func_spans[func_address][0]
-                func_spans[func_address] = (first_row, row)
 
-        if not func_spans:
+            # If this BB is the function entry point, open a new span
+            if bb_address == func_address:
+                open_spans[func_address] = row
+
+            # If we have an open span for this function and this BB is
+            # an exit node, close the span
+            if func_address in open_spans:
+                if bb_address in func_exit_nodes.get(func_address, set()):
+                    start_row = open_spans.pop(func_address)
+                    span = row - start_row + 1
+                    prev = best_spans.get(func_address, None)
+                    if prev is None or span > prev[0]:
+                        best_spans[func_address] = (span, start_row)
+
+        if not best_spans:
             log_debug("_navigate_best_fuzz_target: No function spans found")
             return
 
         # Build ranked list sorted by span descending
         ranked = []
-        for func_address, (first_row, last_row) in func_spans.items():
-            span = last_row - first_row + 1
+        for func_address, (span, first_row) in best_spans.items():
             func_meta = metadata.functions.get(func_address, None)
             func_name = func_meta.name if func_meta else ("0x%X" % func_address)
             span_percent = float(span) / total_rows * 100.0

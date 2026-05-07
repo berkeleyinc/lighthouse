@@ -546,10 +546,15 @@ class LighthousePalette(object):
         #   lmao, don't ask me why they forgot about this attribute from 5.0 - 5.6
         #
 
-        if disassembler.NAME == "BINJA":
-            test_widget.setAttribute(QtCore.Qt.WA_DontShowOnScreen)
-        else:
-            test_widget.setAttribute(103) # taken from http://doc.qt.io/qt-5/qt.html
+        try:
+            widget_attribute = QtCore.Qt.WA_DontShowOnScreen
+        except AttributeError:
+            try:
+                widget_attribute = QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen
+            except AttributeError:
+                widget_attribute = 103 # taken from http://doc.qt.io/qt-5/qt.html
+
+        test_widget.setAttribute(widget_attribute)
 
 
         # render the (invisible) widget

@@ -803,8 +803,7 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
 
         # initialize a monospace font to use for table row / cell text
         self._entry_font = MonospaceFont()
-        if not USING_PYSIDE6:
-            #TODO Figure out if this matters?
+        if hasattr(QtGui.QFont, "ForceIntegerMetrics"):
             self._entry_font.setStyleStrategy(QtGui.QFont.ForceIntegerMetrics)
         self._entry_font.setPointSizeF(normalize_to_dpi(10))
 

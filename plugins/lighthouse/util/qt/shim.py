@@ -111,3 +111,56 @@ if not QT_AVAILABLE and USING_NEW_BINJA:
     # import failed. No Qt / UI bindings available...
     except ImportError:
         pass
+
+def wrap_qt_pointer(pointer, base_class):
+    """
+    Wrap a native Qt pointer as the given Qt class.
+    """
+
+    pointer = int(pointer)
+    module = getattr(base_class, "__module__", "")
+
+    if module.startswith("PyQt5") or module.startswith("PyQt6"):
+        try:
+            import sip
+        except ImportError:
+            from PyQt5 import sip
+
+        return sip.wrapinstance(pointer, base_class)
+
+    if module.startswith("PySide6"):
+        import shiboken6 as shiboken
+        return shiboken.wrapInstance(pointer, base_class)
+
+    if module.startswith("PySide2"):
+        import shiboken2 as shiboken
+        return shiboken.wrapInstance(pointer, base_class)
+
+    if USING_PYSIDE6:
+        import shiboken6 as shiboken
+        return shiboken.wrapInstance(pointer, base_class)
+
+    if USING_PYSIDE2:
+        import shiboken2 as shiboken
+        return shiboken.wrapInstance(pointer, base_class)
+
+    if USING_PYQT5:
+        try:
+            import sip
+        except ImportError:
+            from PyQt5 import sip
+
+        return sip.wrapinstance(pointer, base_class)
+
+    try:
+        from PyQt5 import sip
+        return sip.wrapinstance(pointer, base_class)
+    except ImportError:
+        pass
+
+    try:
+        import shiboken6 as shiboken
+    except ImportError:
+        import shiboken2 as shiboken
+
+    return shiboken.wrapInstance(pointer, base_class)

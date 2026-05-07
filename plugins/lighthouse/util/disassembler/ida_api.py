@@ -150,14 +150,12 @@ class IDACoreAPI(DisassemblerCoreAPI):
         self._dockable_factory[dockable_name] = create_widget_callback
 
     def create_dockable_widget(self, parent, dockable_name):
-        import sip
-
         # create a dockable widget, and save a reference to it for later use
         twidget = idaapi.create_empty_widget(dockable_name)
         self._dockable_widgets[dockable_name] = twidget
 
         # cast the IDA 'twidget' as a Qt widget for use
-        widget = sip.wrapinstance(int(twidget), QtWidgets.QWidget)
+        widget = wrap_qt_pointer(twidget, QtWidgets.QWidget)
         widget.name = dockable_name
         widget.visible = False
 
@@ -291,8 +289,7 @@ class IDACoreAPI(DisassemblerCoreAPI):
         self._touch_ida_window(twidget)
 
         # locate the Qt Widget for a form and take 1px image slice of it
-        import sip
-        widget = sip.wrapinstance(int(twidget), QtWidgets.QWidget)
+        widget = wrap_qt_pointer(twidget, QtWidgets.QWidget)
         pixmap = widget.grab(QtCore.QRect(0, 10, widget.width(), 1))
 
         # convert the raw pixmap into an image (easier to interface with)
@@ -592,4 +589,3 @@ def lex_citem_indexes(line):
 
     # return all the citem indexes extracted from this line of text
     return indexes
-

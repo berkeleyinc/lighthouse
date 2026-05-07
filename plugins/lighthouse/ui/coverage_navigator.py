@@ -221,7 +221,7 @@ class CoverageTableModel(QtCore.QAbstractTableModel):
         self.set_column_alignment(self.FUNC_NAME, QtCore.Qt.AlignVCenter)
 
         self._entry_font = MonospaceFont()
-        if not USING_PYSIDE6:
+        if hasattr(QtGui.QFont, "ForceIntegerMetrics"):
             self._entry_font.setStyleStrategy(QtGui.QFont.ForceIntegerMetrics)
         self._entry_font.setPointSizeF(normalize_to_dpi(10))
         self._title_font = QtGui.QFont()
@@ -608,23 +608,25 @@ class CoverageNavigator(object):
 
     def _setup_hotkeys(self):
         """Setup keyboard hotkeys for navigation."""
+        shortcut_class = getattr(QtWidgets, "QShortcut", None) or QtGui.QShortcut
+
         # Previous/Next BB navigation (Ctrl/Cmd + Left/Right)
-        self._hotkey_prev = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Left"), self._table_view)
+        self._hotkey_prev = shortcut_class(QtGui.QKeySequence("Ctrl+Left"), self._table_view)
         self._hotkey_prev.activated.connect(self._navigate_prev)
 
-        self._hotkey_next = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Right"), self._table_view)
+        self._hotkey_next = shortcut_class(QtGui.QKeySequence("Ctrl+Right"), self._table_view)
         self._hotkey_next.activated.connect(self._navigate_next)
 
-        self._hotkey_next_in_function = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Right"), self._table_view)
+        self._hotkey_next_in_function = shortcut_class(QtGui.QKeySequence("Ctrl+Shift+Right"), self._table_view)
         self._hotkey_next_in_function.activated.connect(self._navigate_next_in_function)
 
-        self._hotkey_prev_in_function = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Left"), self._table_view)
+        self._hotkey_prev_in_function = shortcut_class(QtGui.QKeySequence("Ctrl+Shift+Left"), self._table_view)
         self._hotkey_prev_in_function.activated.connect(self._navigate_prev_in_function)
 
-        self._hotkey_sync = QtWidgets.QShortcut(QtGui.QKeySequence("S"), self._table_view)
+        self._hotkey_sync = shortcut_class(QtGui.QKeySequence("S"), self._table_view)
         self._hotkey_sync.activated.connect(self._sync_with_ida)
 
-        self._hotkey_fuzz_target = QtWidgets.QShortcut(QtGui.QKeySequence("F"), self._table_view)
+        self._hotkey_fuzz_target = shortcut_class(QtGui.QKeySequence("F"), self._table_view)
         self._hotkey_fuzz_target.activated.connect(self._navigate_best_fuzz_target)
 
     def _navigate_prev(self):
